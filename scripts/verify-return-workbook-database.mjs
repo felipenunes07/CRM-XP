@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createHash} from 'node:crypto';
+import pg from 'pg';
+import {readReturnWorkbook} from '../apps/api/dist/modules/returns/returnWorkbookReader.js';
+import {storeReturnWorkbookRules} from '../apps/api/dist/modules/returns/returnWorkbookStore.js';
+import {migrations} from '../apps/api/dist/db/migrations.js';
+const [source,output]=process.argv.slice(2);assert(source&&output,'Provide input.xlsx and report.json');
+const url=new URL(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL??'');assert(['127.0.0.1','localhost'].includes(url.hostname)&&url.pathname==='/crm_returns_test','Only the isolated local crm_returns_test database is permitted');
+const sourceHash=createHash('sha256').update(fs.readFileSync(source)).digest('hex'),schema='returns_workbook_'+createHash('sha256').update(sourceHash+JSON.stringify(migrations.slice(103))).digest('hex').slice(0,12);
+let ticks=0;const interval=setInterval(()=>ticks++,20);const bundle=await readReturnWorkbook(source);clearInterval(interval);assert(ticks>0,'Workbook parsing blocked the main event loop');
+const pool=new pg.Pool({connectionString:url.toString()}),client=await pool.connect();
+try{
+ await client.query('BEGIN');await client.query('CREATE SCHEMA IF NOT EXISTS '+schema);await client.query('SET LOCAL search_path='+schema);
+ const exists=(await client.query("SELECT to_regclass('return_cases') AS name")).rows[0].name;
+ if(!exists){await client.query(`CREATE TABLE profiles(id uuid PRIMARY KEY,email text,full_name text,role text,is_active boolean);CREATE TABLE customers(id uuid PRIMARY KEY,customer_code text,display_name text);CREATE TABLE permissions(key text PRIMARY KEY,name text,description text);CREATE TABLE role_permissions(role text,permission_key text,PRIMARY KEY(role,permission_key));CREATE TABLE whatsapp_instances(id uuid PRIMARY KEY);CREATE TABLE customer_credit_snapshots(id uuid PRIMARY KEY,is_active boolean);CREATE TABLE customer_credit_payment_entries(snapshot_id uuid,customer_id uuid,payment_key text,amount numeric,payment_number text,payment_type text);`);await client.query(fs.readFileSync(new URL('./returns-finance-fixture.sql',import.meta.url),'utf8'));for(const migration of migrations.slice(103))await client.query(migration);}
+ const revision=(await client.query(`INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count,active) VALUES('/LOCAL-PROOF.xlsx','local-proof',$1,$1,NOW(),$2,true) ON CONFLICT(source_file_id,source_revision) DO UPDATE SET active=TRUE RETURNING id`,[sourceHash,bundle.rows.length])).rows[0].id;
+ for(let n=0;n<bundle.rows.length;n+=1000)await client.query(`INSERT INTO return_legacy_rows(revision_id,sheet,row_number,fingerprint,anchor,occurrence,document,customer_code,customer_name,occurred_on,sku,description,signed_quantity,amount_cents,raw_status,raw_payload) SELECT $1,x.* FROM jsonb_to_recordset($2::jsonb) AS x(sheet text,row_number int,fingerprint text,anchor text,occurrence int,document text,customer_code text,customer_name text,occurred_on text,sku text,description text,signed_quantity numeric,amount_cents bigint,raw_status text,raw_payload jsonb) ON CONFLICT DO NOTHING`,[revision,JSON.stringify(bundle.rows.slice(n,n+1000))]);
+ await storeReturnWorkbookRules(client,revision,bundle);await storeReturnWorkbookRules(client,revision,bundle);
+ const counts=(await client.query(`SELECT (SELECT count(*) FROM return_legacy_rows)::int AS rows,(SELECT count(*) FROM return_price_history)::int AS prices,(SELECT count(*) FROM return_price_catalog)::int AS catalog,(SELECT count(*) FROM return_reason_rules)::int AS reasons,(SELECT count(*) FROM return_legacy_auxiliary_rows)::int AS auxiliary,(SELECT count(*) FROM return_cases)::int AS protocols,(SELECT count(*) FROM return_credits)::int AS credits,(SELECT count(*) FROM return_stock_lots)::int AS stock`)).rows[0];
+ assert.equal(counts.rows,bundle.rows.length);assert.equal(counts.prices,bundle.pricing.history.length);assert.equal(counts.catalog,bundle.pricing.catalog.length);assert.equal(counts.reasons,new Set(bundle.pricing.reasons.map(r=>r.code)).size);assert.equal(counts.auxiliary,bundle.auxiliary.length);assert.equal(counts.protocols+counts.credits+counts.stock,0);
+ const balances=(await client.query('SELECT sum(quantity)::text AS q,sum(weighted_cents)::text AS total FROM return_price_history')).rows[0];
+ assert.equal(balances.q,String(bundle.pricing.history.reduce((n,r)=>n+BigInt(r.quantity),0n)));assert.equal(balances.total,String(bundle.pricing.history.reduce((n,r)=>n+BigInt(r.weightedCents),0n)));
+ await client.query('COMMIT');const report={sourceSha256:sourceHash,schema,counts,salesThrough:bundle.pricing.salesThrough,mainEventLoopResponsive:true,repeatedImportDidNotDuplicate:true,sourceFileUnchanged:createHash('sha256').update(fs.readFileSync(source)).digest('hex')===sourceHash};assert(report.sourceFileUnchanged);fs.writeFileSync(output,JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();await pool.end();}

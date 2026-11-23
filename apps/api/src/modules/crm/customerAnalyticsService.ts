@@ -243,7 +243,7 @@ export async function getCustomerAnalytics(customerId: string): Promise<Customer
           snapshot.imported_at::text AS snapshot_updated_at
         FROM active_snapshot active
         JOIN customer_credit_snapshots snapshot ON snapshot.id = active.id
-        JOIN customer_credit_snapshot_rows snapshot_row
+        JOIN customer_credit_effective_rows snapshot_row
           ON snapshot_row.snapshot_id = active.id AND snapshot_row.customer_id = $1
         LEFT JOIN customer_credit_overrides override ON override.customer_id = snapshot_row.customer_id
         LIMIT 1

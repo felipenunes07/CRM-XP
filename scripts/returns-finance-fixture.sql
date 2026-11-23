@@ -1,0 +1,14 @@
+ALTER TABLE customers ADD COLUMN last_attendant text;
+ALTER TABLE customer_credit_snapshots ADD COLUMN source_file_id uuid,ADD COLUMN source_file_path text NOT NULL DEFAULT '/TESTE-LOCAL.xlsx',ADD COLUMN source_file_name text NOT NULL DEFAULT 'TESTE-LOCAL.xlsx',ADD COLUMN source_file_size_bytes bigint NOT NULL DEFAULT 1,ADD COLUMN source_file_updated_at timestamptz NOT NULL DEFAULT now(),ADD COLUMN parser_version int NOT NULL DEFAULT 8,ADD COLUMN total_rows int NOT NULL DEFAULT 1,ADD COLUMN matched_rows int NOT NULL DEFAULT 1,ADD COLUMN unmatched_rows int NOT NULL DEFAULT 0,ADD COLUMN imported_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE customer_credit_payment_entries ADD COLUMN id uuid NOT NULL DEFAULT gen_random_uuid(),ADD COLUMN customer_code text NOT NULL DEFAULT '',ADD COLUMN customer_display_name text NOT NULL DEFAULT '',ADD COLUMN source_display_name text,ADD COLUMN payment_date date,ADD COLUMN observation text NOT NULL DEFAULT '',ADD COLUMN raw_payload jsonb NOT NULL DEFAULT '{}';
+CREATE TABLE customer_credit_overrides(customer_id uuid PRIMARY KEY REFERENCES customers(id),credit_limit numeric,payment_term int,internal_credit_limit numeric,updated_at timestamptz,updated_by_name text,updated_by uuid);
+CREATE TABLE customer_credit_order_entries(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),snapshot_id uuid REFERENCES customer_credit_snapshots(id),customer_id uuid REFERENCES customers(id),customer_code text NOT NULL DEFAULT '',customer_display_name text NOT NULL DEFAULT '',source_display_name text,order_key text NOT NULL,order_number text NOT NULL DEFAULT '',order_date date,total_amount numeric NOT NULL DEFAULT 0,units int NOT NULL DEFAULT 0,seller text,doc text,status text NOT NULL DEFAULT '',line_count int NOT NULL DEFAULT 0,raw_payload jsonb NOT NULL DEFAULT '{}');
+CREATE TABLE customer_credit_snapshot_rows (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),snapshot_id uuid REFERENCES customer_credit_snapshots(id),customer_id uuid REFERENCES customers(id),customer_code text NOT NULL,
+ customer_display_name text,source_display_name text,balance_amount numeric(14,2) NOT NULL DEFAULT 0,credit_limit numeric(14,2) NOT NULL DEFAULT 0,
+ operational_state text NOT NULL DEFAULT 'SETTLED',risk_level text NOT NULL DEFAULT 'OK',observation text NOT NULL DEFAULT '',last_order_date date,last_payment_date date,
+ days_since_last_order int,days_since_last_payment int,payment_term int,risk_score int,flags text[] NOT NULL DEFAULT '{}',
+ has_over_credit boolean NOT NULL DEFAULT false,has_overdue_payment boolean NOT NULL DEFAULT false,has_severely_overdue_payment boolean NOT NULL DEFAULT false,
+ has_no_payment boolean NOT NULL DEFAULT false,has_no_order boolean NOT NULL DEFAULT false,has_negative_credit boolean NOT NULL DEFAULT false,has_debt_without_credit boolean NOT NULL DEFAULT false,
+ raw_payload jsonb NOT NULL DEFAULT '{}',created_at timestamptz NOT NULL DEFAULT now()
+);

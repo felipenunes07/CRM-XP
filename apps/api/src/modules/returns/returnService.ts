@@ -41,7 +41,7 @@ export async function getReturnDetail(id: string): Promise<ReturnDetail> {
   await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
   const result = await client.query(`SELECT base.*,
     COALESCE((SELECT jsonb_agg(to_jsonb(item) ORDER BY item."createdAt",item.id) FROM
-      (SELECT id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes",factory_code AS "factoryCode",factory_workflow AS "factoryWorkflow",seal,routing_override AS "routingOverride",created_at AS "createdAt"
+      (SELECT id,model,sku,quantity,frame,color,manufacturer,outcome,reason,reason_code AS "reasonCode",customer_reported_defect AS "customerReportedDefect",customer_evidence_reference AS "customerEvidenceReference",test_finding AS "testFinding",test_notes AS "testNotes",factory_code AS "factoryCode",factory_workflow AS "factoryWorkflow",seal,routing_override AS "routingOverride",created_at AS "createdAt"
         FROM return_items WHERE case_id=base.id) item),'[]'::jsonb) AS items,
     COALESCE((SELECT jsonb_agg(to_jsonb(file) ORDER BY file."createdAt",file.id) FROM
       (SELECT id,name,content_type AS "contentType",octet_length(bytes) AS size,created_at AS "createdAt",author_name AS "authorName"
@@ -62,9 +62,12 @@ export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<R
   const where: string[] = [];
   const add = (sql: string, value: unknown) => { params.push(value); where.push(sql.replace("?", `$${params.length}`)); };
   if (input.stage === "active") where.push("r.stage <> 'closed'");
-  else if (input.stage === "overdue") where.push("r.stage <> 'closed' AND r.due_at < NOW()");
+  else if (input.stage === "overdue") where.push("r.stage <> 'closed' AND (r.due_at < NOW() OR EXISTS(SELECT 1 FROM return_repair_jobs j JOIN return_dispositions d ON d.id=j.disposition_id WHERE j.case_id=r.id AND j.completed_at IS NULL AND j.due_at<NOW() AND d.voided_at IS NULL) OR EXISTS(SELECT 1 FROM return_inspection_jobs j JOIN return_dispositions d ON d.id=j.disposition_id WHERE j.case_id=r.id AND j.completed_at IS NULL AND j.due_at<NOW() AND d.voided_at IS NULL))");
   else if (input.stage !== "all") add("r.stage = ?", input.stage);
-  if (input.mine === "true") add("r.assignee_id = ?", actor.id);
+  if (input.mine === "true") {
+    params.push(actor.id);const n=params.length;
+    where.push(`(r.assignee_id=$${n} OR r.coordinator_id=$${n} OR EXISTS(SELECT 1 FROM return_repair_jobs j JOIN return_dispositions d ON d.id=j.disposition_id WHERE j.case_id=r.id AND j.assignee_id=$${n} AND j.completed_at IS NULL AND d.voided_at IS NULL) OR EXISTS(SELECT 1 FROM return_inspection_jobs j JOIN return_dispositions d ON d.id=j.disposition_id WHERE j.case_id=r.id AND j.assignee_id=$${n} AND j.completed_at IS NULL AND d.voided_at IS NULL))`);
+  }
   if(input.factory)add('EXISTS(SELECT 1 FROM return_items f WHERE f.case_id=r.id AND f.factory_code=?)',input.factory);
   if (input.search) {
     params.push(`%${input.search}%`);
@@ -116,8 +119,8 @@ export async function createReturnReceipt(payload: unknown, actor: JwtUser) {
   const id = await transaction(async client => {
     if (!(await client.query("SELECT id FROM customers WHERE id=$1", [input.customerId])).rowCount) throw new HttpError(400, "Cliente não encontrado");
     const result = await client.query(`INSERT INTO return_cases
-      (request_id,request_hash,customer_id,received_at,receiver_id,receiver_name,declared_quantity,received_quantity,volumes,location,notes)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (request_id) DO NOTHING RETURNING id`,
+      (request_id,request_hash,customer_id,received_at,receiver_id,receiver_name,declared_quantity,received_quantity,volumes,location,notes,coordinator_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,(SELECT coordinator_id FROM return_transition_settings WHERE id=1)) ON CONFLICT (request_id) DO NOTHING RETURNING id`,
       [input.requestId,hash,input.customerId,input.receivedAt,actor.id,actor.name,input.declaredQuantity,input.receivedQuantity,input.volumes,input.location,input.notes]);
     if (!result.rows[0]) {
       const existing = (await client.query("SELECT id, request_hash FROM return_cases WHERE request_id=$1", [input.requestId])).rows[0];
@@ -160,10 +163,10 @@ export async function saveReturnItem(id: string, itemId: string | null, payload:
     if (itemId && !before) throw new HttpError(404, "Item não encontrado neste protocolo");
     const total = (await client.query("SELECT COALESCE(sum(quantity),0)::int AS total FROM return_items WHERE case_id=$1 AND ($2::uuid IS NULL OR id<>$2)", [id,itemId])).rows[0].total;
     if (total + input.quantity > parent.received_quantity) throw new HttpError(400, "A soma dos itens excede a quantidade recebida");
-    const values = [id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes,input.factoryCode,input.factoryWorkflow,input.seal,input.routingOverride];
+    const values = [id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes,input.factoryCode,input.factoryWorkflow,input.seal,input.routingOverride,input.reasonCode??'',input.customerReportedDefect??'',input.customerEvidenceReference??'',input.testFinding??'not_tested'];
     const result = itemId
-      ? await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10,factory_code=$11,factory_workflow=$12,seal=$13,routing_override=$14 WHERE case_id=$1 AND id=$15 RETURNING id`, [...values,itemId])
-      : await client.query(`INSERT INTO return_items (case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes,factory_code,factory_workflow,seal,routing_override) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`, values);
+      ? await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10,factory_code=$11,factory_workflow=$12,seal=$13,routing_override=$14,reason_code=$15,customer_reported_defect=$16,customer_evidence_reference=$17,test_finding=$18 WHERE case_id=$1 AND id=$19 RETURNING id`, [...values,itemId])
+      : await client.query(`INSERT INTO return_items (case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes,factory_code,factory_workflow,seal,routing_override,reason_code,customer_reported_defect,customer_evidence_reference,test_finding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`, values);
     await record(client,id,itemId ? "item_updated" : "item_added",{ itemId: result.rows[0].id, before, after: input,requestedOutcome:parsed.outcome,routingApplied:parsed.outcome!==input.outcome },actor);
   });
   return getReturnDetail(id);
@@ -205,7 +208,11 @@ export async function changeReturnStage(id: string, payload: unknown, actor: Jwt
       stage = "triage";
     }
     await client.query("UPDATE return_cases SET stage=$2 WHERE id=$1",[id,stage]);
-    if (stage === "triage_completed") await client.query("UPDATE return_cases SET next_action='Conferir os destinos e definir a próxima etapa com Isis' WHERE id=$1",[id]);
+    if (stage === "triage_completed") {
+      const coordinatorId=parent.coordinator_id??(await client.query('SELECT coordinator_id FROM return_transition_settings WHERE id=1')).rows[0]?.coordinator_id;
+      const coordinator=(await returnOperators(client)).find(p=>p.id===coordinatorId&&p.canLogistics);
+      await client.query("UPDATE return_cases SET assignee_id=COALESCE($2,assignee_id),coordinator_id=$2,next_action=$3 WHERE id=$1",[id,coordinator?.id??null,coordinator?'Conferir os destinos e definir a próxima etapa':'Definir coordenador ativo e conferir destinos após triagem']);
+    }
     if (input.action === "reopen_triage") await client.query("UPDATE return_cases SET next_action=$2 WHERE id=$1",[id,`Revisar triagem: ${input.reason}`]);
     await record(client,id,input.action,{ before: parent.stage, after: stage, reason: input.reason },actor);
   });

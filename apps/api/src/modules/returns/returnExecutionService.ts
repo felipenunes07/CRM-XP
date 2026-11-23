@@ -10,6 +10,7 @@ import {batchLinesSchema,batchSendSchema} from './returnExecutionSchemas.js';
 import {findFactoryProfile,normalizeFactoryToken} from '@olist-crm/shared';
 import {factoryProfiles} from './returnFactoryPolicies.js';
 import {reverseNativeCredit} from './returnNativeService.js';
+import {returnCreditQuote} from './returnPricingService.js';
 const ensure:(condition:unknown,message:string,status?:number)=>asserts condition=(condition,message,status=400)=>{if(!condition)throw new HttpError(status,message);};
 type Context={id:string;actor:JwtUser;items:ReturnItem[];facts:ReturnExecution};
 type Table='return_factory_results'|'return_physical_receipts'|'return_resolutions'|'return_credits'|'return_deliveries'|'return_dispositions'|'return_notices'|'return_reviews'|'return_factory_batches'|'return_factory_lines';
@@ -66,12 +67,15 @@ const handlers:{[K in keyof ReturnExecutionInputMap]:(client:PoolClient,ctx:Cont
   await insert(client,'return_resolutions',{case_id:ctx.id,item_id:i.itemId,result_id:i.resultId,quantity:i.quantity,kind:i.kind,reason:i.reason,approval_reference:i.approvalReference,author_name:ctx.actor.name});
  },
  async credit_authorize(client,ctx,i){
+  let priceBasis=i.priceBasis;
+  let calculationEvidence:unknown={};
+  if(i.useCalculation){ensure(i.party==='customer','O cálculo da planilha é exclusivo do crédito do cliente');const quote=await returnCreditQuote(ctx.id,i.sourceId,client);ensure(!quote.issue&&quote.amountCents===i.amountCents&&quote.revision===i.quoteRevision,'O cálculo ou a versão da origem mudou; recalcule antes de autorizar',409);priceBasis=quote.basis;calculationEvidence='evidence' in quote?quote.evidence:{saleCancellation:true};}
   let itemId:string;
   if(i.party==='customer'){const resolution=factFor(ctx.facts.resolutions,i.sourceId);ensure(['credit','sale_cancellation'].includes(resolution.kind),'Este atendimento não prevê crédito');ensure(i.currency==='BRL','Crédito do cliente deve ser registrado em BRL');itemId=resolution.itemId;
    if(resolution.kind==='sale_cancellation'){const cancellation=(await client.query('SELECT quantity,unit_cents FROM return_sale_cancellations WHERE resolution_id=$1',[resolution.id])).rows[0];ensure(cancellation&&i.amountCents===cancellation.quantity*Number(cancellation.unit_cents),'O crédito de cancelamento deve corresponder à quantidade e ao valor da venda conferida');}
   }
   else{const result=factFor(ctx.facts.results,i.sourceId);ensure(result.compensation==='credit','O parecer não prevê crédito do fornecedor');itemId=result.itemId;}
-  await insert(client,'return_credits',{case_id:ctx.id,item_id:itemId,resolution_id:i.party==='customer'?i.sourceId:null,result_id:i.party==='supplier'?i.sourceId:null,party:i.party,amount_cents:i.amountCents,currency:i.currency,price_basis:i.priceBasis,approval_reference:i.approvalReference,author_name:ctx.actor.name});
+  await insert(client,'return_credits',{case_id:ctx.id,item_id:itemId,resolution_id:i.party==='customer'?i.sourceId:null,result_id:i.party==='supplier'?i.sourceId:null,party:i.party,amount_cents:i.amountCents,currency:i.currency,price_basis:priceBasis,approval_reference:i.approvalReference,author_name:ctx.actor.name,calculation_evidence:JSON.stringify(calculationEvidence)});
  },
  async credit_post(client,ctx,i){
   const credit=ctx.facts.credits.find(c=>c.id===i.creditId);ensure(credit&&credit.status==='approved','Crédito não está autorizado ou já foi confirmado');
@@ -96,11 +100,13 @@ const handlers:{[K in keyof ReturnExecutionInputMap]:(client:PoolClient,ctx:Cont
   await client.query('UPDATE return_deliveries SET delivered_at=$2,delivery_proof=$3,recipient=$4 WHERE id=$1',[delivery.id,i.occurredAt,i.proof,i.recipient]);
  },
  async disposition(client,ctx,i){
+  const item=itemFor(ctx,i.itemId);ensure(item.outcome!=='resale'||!['stock','outlet'].includes(i.destination),'Vender de novo exige recondicionamento antes da entrada em estoque; encaminhe ao técnico');
   checkSource(ctx,i.itemId,i.receiptId,i.asset,i.quantity);
   await insert(client,'return_dispositions',{case_id:ctx.id,item_id:i.itemId,receipt_id:i.receiptId,asset:i.asset,quantity:i.quantity,destination:i.destination,from_location:i.fromLocation,to_location:i.toLocation,custodian:i.custodian,reference:i.reference,reason:i.reason,test_notes:i.testNotes,occurred_at:i.occurredAt,author_name:ctx.actor.name});
  },
  async disposition_confirm(client,ctx,i){
   const disposition=factFor(ctx.facts.dispositions,i.dispositionId);ensure(!disposition.completedAt,'Este destino já foi confirmado');dateOrder(i.occurredAt,disposition.occurredAt);
+  ensure(disposition.destination!=='technical_review','Atribua o reteste e aguarde o parecer do técnico antes de confirmar o destino');
   if(disposition.destination==='reconditioning')ensure((await client.query('SELECT id FROM return_repair_jobs WHERE disposition_id=$1 AND completed_at IS NOT NULL',[disposition.id])).rowCount,'O técnico precisa concluir o recondicionamento e registrar os testes antes da conferência física');
   await client.query('UPDATE return_dispositions SET completed_at=$2,completion_proof=$3,received_by=$4 WHERE id=$1',[disposition.id,i.occurredAt,i.proof,i.receivedBy]);
  },
@@ -159,7 +165,7 @@ async function writeFactoryLines(client:PoolClient,batchId:string,manufacturer:s
  if(mode==='individual')ensure(new Set(lines.map(l=>l.caseId)).size===1,'Encaminhamento individual não mistura remessas de clientes; use uma saída por protocolo');
  const profiles=await factoryProfiles(client),target=findFactoryProfile(profiles,manufacturer);ensure(target?.isActive&&target.code!=='UNKNOWN','Identifique a fábrica do envio');
  if(target.workflow==='vv_batch')ensure(mode==='batch','VV exige formação de lote');
- else ensure(mode==='individual','Esta fábrica usa encaminhamento individual por protocolo');
+ else ensure(mode==='individual'||target.allowsBatch,'Esta fábrica usa encaminhamento individual; agrupamento precisa estar autorizado nas regras da fábrica');
  for(const line of lines){
   const items=await itemsFor(client,line.caseId),item=items.find(i=>i.id===line.itemId);ensure(item&&item.outcome==='external_analysis','Item não pertence à análise externa deste protocolo');
   const profile=findFactoryProfile(profiles,item.manufacturer,item.factoryCode);
@@ -178,6 +184,7 @@ export async function dispatchFactoryBatch(payload:unknown,actor:JwtUser){
   const mode=input.mode??(profile.workflow==='vv_batch'?'batch':'individual'),state=input.state??'sent';
   ensure(profile.workflow!=='vv_batch'||input.lotReference?.trim(),'Informe o número ou identificação do lote VV');
   ensure(profile.workflow!=='vv_batch'||mode==='batch','VV exige lote');
+  ensure(mode!=='batch'||input.lotReference?.trim(),'Informe a identificação do lote ou agrupamento');
   const versions=new Map<string,number>();for(const line of input.lines){ensure(!versions.has(line.caseId)||versions.get(line.caseId)===line.version,'Versões diferentes do mesmo protocolo');versions.set(line.caseId,line.version);}
   await lockBatchCases(client,[...versions].map(([id,version])=>({id,version})),[...versions.keys()]);
   const responsibleId=input.responsibleId??profile.defaultAssigneeId??actor.id;await checkResponsible(client,responsibleId);

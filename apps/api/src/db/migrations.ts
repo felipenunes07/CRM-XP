@@ -5,6 +5,8 @@ import { returnExecutionMigration } from "./returnExecutionMigration.js";
 import { returnFactoryMigration } from "./returnFactoryMigration.js";
 import { returnNativeMigration } from './returnNativeMigration.js';
 import {returnNoticeAccessMigration} from './returnNoticeAccessMigration.js';
+import {returnOperationsMigration} from './returnOperationsMigration.js';
+import {returnFinanceMigration} from './returnFinanceMigration.js';
 export const migrations = [
   `
   CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -4930,4 +4932,6 @@ export const migrations = [
   returnFactoryMigration,
   returnNativeMigration,
   returnNoticeAccessMigration,
+  returnOperationsMigration,
+  returnFinanceMigration,
 ];

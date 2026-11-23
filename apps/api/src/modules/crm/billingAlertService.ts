@@ -100,6 +100,7 @@ async function loadBillingInputs(snapshotId: string) {
         snapshot_row.customer_code,
         COALESCE(snapshot_row.customer_display_name, snapshot_row.source_display_name, snapshot_row.customer_code) AS display_name,
         snapshot_row.balance_amount,
+        snapshot_row.return_adjustment_cents,
         COALESCE(override.credit_limit, snapshot_row.credit_limit) AS credit_limit,
         COALESCE(override.payment_term, snapshot_row.payment_term) AS payment_term,
         -- Credito interno ajustado no CRM vale mais que a coluna H da planilha.
@@ -131,13 +132,14 @@ async function loadBillingInputs(snapshotId: string) {
           ),
           NULLIF(BTRIM(customer.last_attendant), '')
         ) AS seller
-      FROM customer_credit_snapshot_rows snapshot_row
+      FROM customer_credit_effective_rows snapshot_row
       LEFT JOIN customer_credit_overrides override
         ON override.customer_id = snapshot_row.customer_id
       LEFT JOIN customers customer
         ON customer.id = snapshot_row.customer_id
       WHERE snapshot_row.snapshot_id = $1
         AND snapshot_row.balance_amount < 0
+        AND NOT snapshot_row.return_reconciliation_required
         AND COALESCE(snapshot_row.customer_display_name, '') NOT ILIKE '%shop online%'
         AND COALESCE(snapshot_row.source_display_name, '') NOT ILIKE '%shop online%'
     `,
@@ -193,6 +195,7 @@ async function loadBillingInputs(snapshotId: string) {
     customerCode: String(row.customer_code),
     amount: Number(row.amount ?? 0),
   }));
+  for(const row of customersResult.rows){const amount=Number(row.return_adjustment_cents??0)/100;if(amount>0)payments.push({customerCode:String(row.customer_code),amount});}
 
   return { customers, orders, payments };
 }
@@ -206,7 +209,7 @@ async function loadUnmatchedEntries(snapshotId: string, dateKey: string): Promis
   const result = await pool.query(
     `
       WITH known AS (
-        SELECT DISTINCT customer_code FROM customer_credit_snapshot_rows WHERE snapshot_id = $1
+        SELECT DISTINCT customer_code FROM customer_credit_effective_rows WHERE snapshot_id = $1
       )
       SELECT 'PAG' AS source, payment_key AS entry_key, customer_code, payment_date::text AS entry_date,
              amount, CONCAT_WS(' ', NULLIF(payment_type, ''), NULLIF(observation, '')) AS reference

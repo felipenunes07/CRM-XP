@@ -6,9 +6,9 @@ import { HttpError } from '../../lib/httpError.js';
 import type { JwtUser } from '../platform/authService.js';
 import {transaction} from './returnTransactions.js';
 export async function factoryProfiles(client:Pool|PoolClient=pool):Promise<ReturnFactoryProfile[]>{
- return (await client.query(`SELECT code,name,aliases,workflow,default_assignee_id AS "defaultAssigneeId",instructions,is_active AS "isActive",version FROM return_factory_profiles ORDER BY CASE code WHEN 'VV' THEN 0 WHEN 'DE' THEN 1 WHEN 'STC' THEN 2 ELSE 3 END,name`)).rows;
+ return (await client.query(`SELECT code,name,aliases,workflow,default_assignee_id AS "defaultAssigneeId",instructions,is_active AS "isActive",version,allows_batch AS "allowsBatch" FROM return_factory_profiles ORDER BY CASE code WHEN 'VV' THEN 0 WHEN 'DE' THEN 1 WHEN 'STC' THEN 2 ELSE 3 END,name`)).rows;
 }
-const profileSchema=z.object({version:z.number().int().min(0),code:z.string().regex(/^[A-Z0-9_]{2,30}$/),name:z.string().trim().min(1).max(100),aliases:z.array(z.string().trim().min(1).max(100)).max(30),workflow:z.enum(['vv_batch','external_individual','internal']),defaultAssigneeId:z.string().uuid().nullable(),instructions:z.string().trim().max(4000),isActive:z.boolean()}).strict();
+const profileSchema=z.object({version:z.number().int().min(0),code:z.string().regex(/^[A-Z0-9_]{2,30}$/),name:z.string().trim().min(1).max(100),aliases:z.array(z.string().trim().min(1).max(100)).max(30),workflow:z.enum(['vv_batch','external_individual','internal']),defaultAssigneeId:z.string().uuid().nullable(),instructions:z.string().trim().max(4000),isActive:z.boolean(),allowsBatch:z.boolean().optional()}).strict();
 export async function saveFactoryProfile(payload:unknown,actor:JwtUser){
  if(!actor.permissions?.includes('returns.configure'))throw new HttpError(403,'Acesso negado');const i=profileSchema.parse(payload);
  await transaction(async client=>{
@@ -23,17 +23,22 @@ export async function saveFactoryProfile(payload:unknown,actor:JwtUser){
    const required=i.workflow==='internal'?'returns.manage':'returns.logistics';if(!p?.is_active||!computeEffectivePermissions({role:p.role,overrides:p.overrides}).includes(required))throw new HttpError(400,'Selecione um responsável ativo com acesso à etapa');
   }
   await client.query(`INSERT INTO return_factory_profiles(code,name,aliases,workflow,default_assignee_id,instructions,is_active) VALUES($1,$2,$3::jsonb,$4,$5,$6,$7) ON CONFLICT(code) DO UPDATE SET name=EXCLUDED.name,aliases=EXCLUDED.aliases,default_assignee_id=EXCLUDED.default_assignee_id,instructions=EXCLUDED.instructions,is_active=EXCLUDED.is_active,workflow=EXCLUDED.workflow,version=return_factory_profiles.version+1,updated_at=NOW()`,[i.code,i.name,JSON.stringify(i.aliases),i.workflow,i.defaultAssigneeId,i.instructions,i.isActive]);
+  if(i.allowsBatch!==undefined)await client.query('UPDATE return_factory_profiles SET allows_batch=$2 WHERE code=$1',[i.code,i.allowsBatch]);
   await client.query('INSERT INTO return_settings_events(resource,author_id,author_name,data) VALUES($1,$2,$3,$4::jsonb)',['factory:'+i.code,actor.id,actor.name,JSON.stringify({before,after:i})]);
  });return factoryProfiles();
 }
 export async function routeReturnItem(client:PoolClient,input:ReturnItemInput,actor:JwtUser){
+ if(input.reasonCode){const rule=(await client.query('SELECT r.* FROM return_reason_rules r JOIN return_legacy_revisions v ON v.id=r.revision_id AND v.active WHERE r.code=$1',[input.reasonCode])).rows[0];if(!rule)throw new HttpError(409,'O motivo da planilha mudou; recarregue os motivos atuais');const reason=input.reason===rule.label||input.reason.startsWith(rule.label+' · ')?input.reason:rule.label+(input.reason?' · '+input.reason:'');input={...input,outcome:rule.outcome,reason};}
  const profiles=await factoryProfiles(client);const profile=findFactoryProfile(profiles,input.manufacturer,input.factoryCode);
  if(!profile||!profile.isActive)throw new HttpError(400,'Selecione uma fábrica ativa');
  if(input.factoryCode&&profile.code!==input.factoryCode)throw new HttpError(400,'O nome informado pertence a outra fábrica. Confira o cadastro.');
  const seal=input.seal?.trim()??'';const routed=isAnalysisSeal(seal)||profile.workflow!=='internal';
  const override=input.routingOverride?.trim()??'';
  if(override&&!actor.permissions?.includes('returns.logistics'))throw new HttpError(403,'Somente logística pode registrar uma exceção de encaminhamento');
- const outcome=routed&&!override&&!['pending','review'].includes(input.outcome)?'external_analysis':input.outcome;
- const factoryCode=profile.code==='OTHER'&&isAnalysisSeal(seal)&&!input.manufacturer.trim()?'UNKNOWN':profile.code;
- return {...input,outcome,manufacturer:input.manufacturer.trim()|| (factoryCode==='UNKNOWN'?'Fábrica a identificar':profile.code==='OTHER'?'':profile.name),factoryCode,factoryWorkflow:factoryCode==='UNKNOWN'?'external_individual':profile.workflow,seal,routingOverride:override};
+ const customerDispute=Boolean(input.customerReportedDefect?.trim()&&input.customerEvidenceReference?.trim()&&input.testFinding!=='reproduced');
+ const outcome=routed&&!override&&!['pending','review'].includes(input.outcome)?'external_analysis':customerDispute&&!override&&!['pending','external_analysis'].includes(input.outcome)?'review':input.outcome;
+ const catalog=profile.code==='OTHER'&&input.sku?(await client.query('SELECT c.model FROM return_price_catalog c JOIN return_legacy_revisions v ON v.id=c.revision_id AND v.active WHERE c.sku=$1',[input.sku.trim().toUpperCase()])).rows[0]:null;
+ const nonXp=String(catalog?.model??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().includes('[NAO XP]');
+ const factoryCode=profile.code==='OTHER'&&!override&&(nonXp||(isAnalysisSeal(seal)&&!input.manufacturer.trim()))?'UNKNOWN':profile.code;
+ return {...input,outcome:factoryCode==='UNKNOWN'&&!['pending','review'].includes(outcome)?'review':outcome,manufacturer:input.manufacturer.trim()|| (factoryCode==='UNKNOWN'?'Fábrica a identificar':profile.code==='OTHER'?'':profile.name),factoryCode,factoryWorkflow:factoryCode==='UNKNOWN'?'external_individual':profile.workflow,seal,routingOverride:override};
 }

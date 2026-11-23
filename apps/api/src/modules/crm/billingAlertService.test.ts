@@ -36,7 +36,7 @@ async function query(sql: string, params: unknown[] = []) {
     db.cursors.set(String(params[0]), String(params[1]));
     return { rows: [] };
   }
-  if (sql.includes("FROM customer_credit_snapshot_rows snapshot_row")) {
+  if (sql.includes("FROM customer_credit_effective_rows snapshot_row")) {
     const debt = db.activeSnapshotId === "snap-manha" ? 600_000 : 612_000;
     return {
       rows: [

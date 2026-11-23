@@ -6,10 +6,11 @@ import {cleanupTempFile,downloadFileByPath,getDropboxFileMetadata} from '../../l
 import {logger} from '../../lib/logger.js';
 import type {JwtUser} from '../platform/authService.js';
 import {command,lockCase,record,transaction} from './returnTransactions.js';
-import {readReturnLegacyFile} from './returnLegacyParser.js';
+import {readReturnWorkbook} from './returnWorkbookReader.js';
+import {storeReturnWorkbookRules} from './returnWorkbookStore.js';
 const ensure=(condition:unknown,message:string)=>{if(!condition)throw new HttpError(409,message);};
 export async function transitionSettings(client:PoolClient|typeof pool=pool){
- return (await client.query(`SELECT source_path AS "sourcePath",source_enabled AS "sourceEnabled",authority,version,cutover_at AS "cutoverAt",cutover_reason AS "cutoverReason",last_checked_at AS "lastCheckedAt",last_success_at AS "lastSuccessAt",last_error AS "lastError" FROM return_transition_settings WHERE id=1`)).rows[0];
+ return (await client.query(`SELECT source_path AS "sourcePath",source_enabled AS "sourceEnabled",authority,version,coordinator_id AS "coordinatorId",cutover_at AS "cutoverAt",cutover_reason AS "cutoverReason",last_checked_at AS "lastCheckedAt",last_success_at AS "lastSuccessAt",last_error AS "lastError" FROM return_transition_settings WHERE id=1`)).rows[0];
 }
 // A refresh never creates a protocol, approves money or modifies Dropbox.
 export async function refreshReturnLegacy(){
@@ -20,18 +21,21 @@ export async function refreshReturnLegacy(){
   await client.query('UPDATE return_transition_settings SET last_checked_at=NOW() WHERE id=1');
   const meta=await getDropboxFileMetadata(settings.sourcePath);
   ensure(meta.fileSizeBytes<100_000_000,'A origem ultrapassou o limite de leitura');
-  if((await client.query('SELECT 1 FROM return_legacy_revisions WHERE active AND source_file_id=$1 AND source_revision=$2',[meta.fileId,meta.fileRevision])).rowCount){await client.query("UPDATE return_transition_settings SET last_success_at=NOW(),last_error='' WHERE id=1");return;}
+  if((await client.query('SELECT 1 FROM return_legacy_revisions v JOIN return_price_snapshots p ON p.revision_id=v.id WHERE v.active AND v.source_file_id=$1 AND v.source_revision=$2',[meta.fileId,meta.fileRevision])).rowCount){await client.query("UPDATE return_transition_settings SET last_success_at=NOW(),last_error='' WHERE id=1");return;}
   const file=await downloadFileByPath('rev:'+meta.fileRevision);localPath=file.localPath;
   ensure(file.fileId===meta.fileId&&file.fileRevision===meta.fileRevision,'A origem mudou durante a leitura; tente novamente');
-  const rows=readReturnLegacyFile(localPath);
+  const {rows,pricing,auxiliary}=await readReturnWorkbook(localPath);
   await client.query('BEGIN');
   const current=await client.query('SELECT version FROM return_transition_settings WHERE id=1 FOR UPDATE');ensure(current.rows[0].version===settings.version,'A configuração mudou durante a atualização');
   let revision=(await client.query(`INSERT INTO return_legacy_revisions(source_path,source_file_id,source_revision,source_hash,source_modified_at,row_count) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_file_id,source_revision) DO NOTHING RETURNING id`,[settings.sourcePath,meta.fileId,meta.fileRevision,meta.contentHash,meta.fileUpdatedAt,rows.length])).rows[0];
   if(revision){
    for(let i=0;i<rows.length;i+=1000)await client.query(`INSERT INTO return_legacy_rows(revision_id,sheet,row_number,fingerprint,anchor,occurrence,document,customer_code,customer_name,occurred_on,sku,description,signed_quantity,amount_cents,raw_status,raw_payload) SELECT $1,x.* FROM jsonb_to_recordset($2::jsonb) AS x(sheet text,row_number int,fingerprint text,anchor text,occurrence int,document text,customer_code text,customer_name text,occurred_on text,sku text,description text,signed_quantity numeric,amount_cents bigint,raw_status text,raw_payload jsonb)`,[revision.id,JSON.stringify(rows.slice(i,i+1000))]);
   }else revision=(await client.query('SELECT id FROM return_legacy_revisions WHERE source_file_id=$1 AND source_revision=$2',[meta.fileId,meta.fileRevision])).rows[0];
+  await storeReturnWorkbookRules(client,revision.id,{pricing,auxiliary});
   await client.query('UPDATE return_legacy_revisions SET active=FALSE WHERE active');
   await client.query('UPDATE return_legacy_revisions SET active=TRUE WHERE id=$1',[revision.id]);
+  // Financial approvals retain their calculation evidence. Historical read caches need only the active revision.
+  for(const table of ['return_price_history','return_price_catalog','return_reason_rules','return_sku_aliases','return_legacy_auxiliary_rows'])await client.query(`DELETE FROM ${table} r USING return_legacy_revisions v WHERE v.id=r.revision_id AND NOT v.active`);
   // Only the current read cache is needed; every reviewed source row and revision receipt is retained.
   await client.query(`DELETE FROM return_legacy_rows r USING return_legacy_revisions v WHERE v.id=r.revision_id AND NOT v.active AND NOT EXISTS(SELECT 1 FROM return_legacy_links l WHERE l.source_row_id=r.id) AND NOT EXISTS(SELECT 1 FROM return_legacy_exclusions e WHERE e.source_row_id=r.id)`);
   await client.query("UPDATE return_transition_settings SET last_success_at=NOW(),last_error='' WHERE id=1");await client.query('COMMIT');
@@ -54,6 +58,7 @@ export async function listReturnLegacy(query:unknown){
 }
 export async function reviewReturnLegacy(payload:unknown,actor:JwtUser){
  const i=z.object({requestId:z.string().uuid(),rowId:z.string().uuid(),revision:z.string(),caseId:z.string().uuid().nullable(),version:z.number().int().positive().optional(),reason:z.string().trim().min(5).max(4000)}).strict().parse(payload);
+ if(!actor.permissions?.includes('returns.configure')&&(!i.caseId||!actor.permissions?.includes('returns.logistics')))throw new HttpError(403,'Somente administração pode excluir histórico; logística pode vincular ao protocolo do mesmo cliente');
  await command('legacy_review',i,actor,async client=>{
   await client.query('SELECT id FROM return_transition_settings WHERE id=1 FOR SHARE');
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('return-legacy-review',0))");
@@ -76,7 +81,7 @@ export async function resolveReturnLegacyLink(payload:unknown,actor:JwtUser){
  await command('legacy_resolve',i,actor,async client=>{const l=(await client.query('SELECT * FROM return_legacy_links WHERE id=$1 FOR UPDATE',[i.linkId])).rows[0];ensure(l?.active,'Vínculo não está ativo');await lockCase(client,l.case_id,i.caseVersion);await client.query('UPDATE return_legacy_links SET active=FALSE,superseded_at=NOW(),resolution=$2 WHERE id=$1',[l.id,i.reason]);await record(client,l.case_id,'legacy_link_resolved',{linkId:l.id,reason:i.reason},actor);return l.case_id;});
 }
 export async function configureReturnTransition(payload:unknown,actor:JwtUser){
- const i=z.object({version:z.number().int().positive(),sourcePath:z.string().trim().startsWith('/').max(1000),sourceEnabled:z.boolean(),authority:z.enum(['parallel','crm']),reason:z.string().trim().min(5).max(4000)}).strict().parse(payload);
+ const i=z.object({version:z.number().int().positive(),sourcePath:z.string().trim().startsWith('/').max(1000),sourceEnabled:z.boolean(),authority:z.enum(['parallel','crm']),coordinatorId:z.string().uuid().nullable().optional(),reason:z.string().trim().min(5).max(4000)}).strict().parse(payload);
  await transaction(async client=>{const old=(await client.query('SELECT * FROM return_transition_settings WHERE id=1 FOR UPDATE')).rows[0];ensure(old.version===i.version,'Configuração atualizada; recarregue');
   if(i.authority==='crm'&&old.authority!=='crm'){
    ensure(!(await client.query(`SELECT 1 ${currentRows} WHERE l.id IS NULL AND e.id IS NULL LIMIT 1`)).rowCount,'Conclua a conferência das linhas antes de encerrar a migração');
@@ -85,7 +90,8 @@ export async function configureReturnTransition(payload:unknown,actor:JwtUser){
    ensure(!old.last_error&&old.last_success_at&&Date.now()-new Date(old.last_success_at).getTime()<15*60*1000,'Atualize a origem nos últimos 15 minutos antes do corte');
    ensure(i.sourcePath===old.source_path,'Não altere a origem durante o corte');
   }
-  await client.query(`UPDATE return_transition_settings SET last_success_at=CASE WHEN source_path<>$1 THEN NULL ELSE last_success_at END,last_error=CASE WHEN source_path<>$1 THEN 'Origem alterada; aguarde a primeira leitura válida' ELSE last_error END,source_path=$1,source_enabled=$2,authority=$3,cutover_at=CASE WHEN $3='crm' THEN COALESCE(cutover_at,NOW()) ELSE NULL END,cutover_reason=$4,version=version+1 WHERE id=1`,[i.sourcePath,i.sourceEnabled,i.authority,i.reason]);
+  if(i.coordinatorId){const {computeEffectivePermissions}=await import('../platform/permissionService.js');const person=(await client.query(`SELECT p.role,p.is_active,COALESCE(jsonb_agg(jsonb_build_object('permissionKey',u.permission_key,'allowed',u.allowed)) FILTER(WHERE u.permission_key IS NOT NULL),'[]'::jsonb) AS overrides FROM profiles p LEFT JOIN user_permissions u ON u.user_id=p.id WHERE p.id=$1 GROUP BY p.id`,[i.coordinatorId])).rows[0];ensure(person?.is_active&&computeEffectivePermissions({role:person.role,overrides:person.overrides}).includes('returns.logistics'),'Coordenador precisa estar ativo e ter acesso à logística de trocas');}
+  await client.query(`UPDATE return_transition_settings SET last_success_at=CASE WHEN source_path<>$1 THEN NULL ELSE last_success_at END,last_error=CASE WHEN source_path<>$1 THEN 'Origem alterada; aguarde a primeira leitura válida' ELSE last_error END,source_path=$1,source_enabled=$2,authority=$3,cutover_at=CASE WHEN $3='crm' THEN COALESCE(cutover_at,NOW()) ELSE NULL END,cutover_reason=$4,coordinator_id=$5,version=version+1 WHERE id=1`,[i.sourcePath,i.sourceEnabled,i.authority,i.reason,i.coordinatorId===undefined?old.coordinator_id:i.coordinatorId]);
   await client.query(`INSERT INTO return_settings_events(resource,author_id,author_name,data) VALUES('transition',$1,$2,$3)`,[actor.id,actor.name,JSON.stringify({before:old,after:i})]);
  });return transitionSettings();
 }

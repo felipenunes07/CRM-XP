@@ -6,6 +6,10 @@ import {
 } from "./orderCreditAlertService.js";
 
 describe("order credit proposal detection", () => {
+  it('uses the customer credit balance before requesting additional payment and preserves approved limits',()=>{
+    expect(evaluateOrderCredit({debtAmount:0,creditBalanceAmount:50,creditLimit:100,internalCreditLimit:null,otherOpenProposals:0,orderTotal:140})).toMatchObject({effectiveLimit:100,projectedExposure:90,requiredPayment:0,shouldAlert:false,availableBeforeOrder:150});
+    expect(evaluateOrderCredit({debtAmount:0,creditBalanceAmount:50,creditLimit:100,internalCreditLimit:null,otherOpenProposals:0,orderTotal:160})).toMatchObject({effectiveLimit:100,projectedExposure:110,requiredPayment:10,shouldAlert:true});
+  });
   it("accepts the Olist proposal statuses and ignores released orders", () => {
     expect(isCommercialProposalStatus("Em aberto")).toBe(true);
     expect(isCommercialProposalStatus("Aberto")).toBe(true);

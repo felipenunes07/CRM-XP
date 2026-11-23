@@ -25,7 +25,7 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
    await page.getByRole('button',{name:'Salvar responsável e ação',exact:true}).click();
    await page.locator('.returns-card.is-selected').getByText('Responsável: Isis',{exact:true}).waitFor();await page.getByRole('button',{name:'Iniciar triagem',exact:true}).click();
    await page.getByRole('button',{name:'Adicionar item',exact:true}).click();
-   await page.getByLabel('Modelo',{exact:true}).fill('IP11 — TESTE E2E');await page.getByLabel('Quantidade do grupo').fill(String(quantity));
+   await page.getByLabel('Modelo',{exact:true}).fill('IP11 — TESTE E2E');await page.getByLabel('SKU, se identificado',{exact:true}).fill('CX156-1');await page.getByLabel('Quantidade do grupo').fill(String(quantity));
    await page.getByRole('combobox',{name:'Resultado',exact:true}).selectOption('external_analysis');await page.getByLabel('Fábrica',{exact:true}).fill('VV');
    await page.getByLabel('Teste ou inspeção realizada').fill('Teste de imagem e inspeção realizados');
    await page.getByRole('button',{name:'Salvar item',exact:true}).click();await page.getByRole('button',{name:'Salvar item',exact:true}).waitFor({state:'hidden'});
@@ -36,7 +36,7 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
   state.caseIds=[a.id,b.id];await fs.writeFile(path.join(output,'test-cases.json'),JSON.stringify(state,null,2));
   await page.getByRole('button',{name:'Envios de fábrica',exact:true}).click();await page.getByRole('button',{name:'Novo envio',exact:true}).click();
   const batchForm=page.getByRole('form',{name:'Novo envio de fábrica'});
-  await batchForm.getByLabel('Fábrica do envio').fill('VV');await batchForm.getByLabel('Situação',{exact:true}).selectOption('sent');await batchForm.getByLabel('Identificação do lote VV').fill('VV-E2E-'+Date.now());await batchForm.getByLabel('Prazo interno de retorno').fill('2026-12-12T15:00');
+  await batchForm.getByLabel('Fábrica do envio').fill('VV');await batchForm.getByLabel('Situação',{exact:true}).selectOption('sent');await batchForm.getByLabel('Identificação do lote / agrupamento').fill('VV-E2E-'+Date.now());await batchForm.getByLabel('Prazo interno de retorno').fill('2026-12-12T15:00');
   await batchForm.getByLabel('Local de saída').fill('Recebimento XP');await batchForm.getByLabel('Transportadora / entregue por').fill('Isis — transporte de teste');
   const reference='ENV-E2E-'+Date.now();await batchForm.getByLabel('Comprovante único do envio').fill(reference);
   await batchForm.getByLabel('Buscar itens por cliente ou fábrica').fill(a.protocol);
@@ -111,6 +111,8 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
   const job=await fetch(backend+'/api/returns/'+b.id+'/native',{headers:{Authorization:'Bearer local-dev-token'}}).then(r=>r.json()).then(n=>n.repairs[0]);
   await nativeCommand('repair_complete',{jobId:job.id,jobVersion:job.version,grade:'grade_1',seal:'1',testNotes:'Trabalho e testes concluídos pelo técnico'});await openCase(b.id);
   d=await operation('disposition_confirm',async form=>{await form.getByLabel('Encaminhamento pendente').selectOption(d.execution.dispositions[0].id);await form.getByLabel('Responsável que confirmou a conclusão').fill('Responsável pelo estoque');await form.getByLabel('Comprovante do destino concluído / entrada no estoque').fill('OS-E2E CONCLUÍDA / ENTRADA OUTLET TESTE');});
+  assert.equal(d.progress.canClose,false);assert(d.progress.blockers.some(b=>b.includes('entrada das peças recuperadas')));
+  await nativeCommand('stock_receive',{dispositionId:d.execution.dispositions[0].id,sku:'CX156-1',grade:'grade_1',seal:'1',inspection:'Inspeção e testes do outlet conferidos',location:'OUTLET-TESTE',reference:reference+'-ESTOQUE-B'});await openCase(b.id);
   d=await operation('close',form=>form.getByLabel('Motivo / conferência').fill('Atendimento e destinação interna conferidos'));assert.equal(d.stage,'closed');
   await page.reload();await page.getByRole('tab',{name:'Destino e encerramento',exact:true}).click();await page.getByText(/Protocolo encerrado em/).waitFor();assert.deepEqual(errors,[]);
   const report={checkedAt:new Date().toISOString(),caseIds:state.caseIds,mixedClientBatch:true,partialFactoryPendingVisible:true,customerAndSupplierCreditsIndependent:true,partialDeliveryBlockedClose:true,originalAndReplacementCustody:true,internalWorkBlockedClose:true,reprintingDidNotDuplicateCredit:true,bothCasesClosed:true,mobileNoOverflow:true,errors};

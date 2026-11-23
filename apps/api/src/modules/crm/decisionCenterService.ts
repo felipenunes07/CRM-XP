@@ -198,11 +198,11 @@ async function loadCentralCreditRows() {
         snapshot_row.has_overdue_payment,
         snapshot_row.has_severely_overdue_payment,
         snapshot_row.has_no_payment
-      FROM customer_credit_snapshot_rows snapshot_row
+      FROM customer_credit_effective_rows snapshot_row
       JOIN active_snapshot snapshot ON snapshot.id = snapshot_row.snapshot_id
       JOIN customers customer ON customer.id = snapshot_row.customer_id
       LEFT JOIN customer_credit_overrides override ON override.customer_id = snapshot_row.customer_id
-      WHERE snapshot_row.customer_id IS NOT NULL
+      WHERE snapshot_row.customer_id IS NOT NULL AND NOT snapshot_row.return_reconciliation_required
         AND customer.display_name NOT ILIKE '%shop online%'
     `,
   );
