@@ -1,3 +1,4 @@
+import {returnFinanceProjectionMigration} from '../apps/api/src/db/returnFinanceProjectionMigration.js';
 // Local-only fixture server: real CRM routes, isolated PostgreSQL, no workers or messages.
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -12,7 +13,7 @@ import {returnFinanceMigration} from '../apps/api/src/db/returnFinanceMigration.
 const url=new URL(process.env.DATABASE_URL ?? "");
 if (!["127.0.0.1","localhost"].includes(url.hostname) || url.pathname!=="/crm_returns_test") throw Error("Preview requires the isolated local crm_returns_test database");
 // A schema per migration definition keeps the fixture repeatable during development without deleting earlier fixtures.
-const schema='returns_preview_'+createHash('sha256').update(returnWorkflowMigration+returnExecutionMigration+returnFactoryMigration+returnNativeMigration+returnNoticeAccessMigration+returnOperationsMigration+returnFinanceMigration+fs.readFileSync(new URL('./returns-finance-fixture.sql',import.meta.url),'utf8').replaceAll('\r\n','\n')).digest('hex').slice(0,12);
+const schema='returns_preview_'+createHash('sha256').update(returnWorkflowMigration+returnExecutionMigration+returnFactoryMigration+returnNativeMigration+returnNoticeAccessMigration+returnOperationsMigration+returnFinanceMigration+returnFinanceProjectionMigration+fs.readFileSync(new URL('./returns-finance-fixture.sql',import.meta.url),'utf8').replaceAll('\r\n','\n')).digest('hex').slice(0,12);
 url.searchParams.set('options','-c search_path='+schema);
 process.env.DATABASE_URL=url.toString();
 process.env.WEB_ORIGIN='http://127.0.0.1:5189';
@@ -48,6 +49,7 @@ if(!(await pool.query('SELECT id FROM return_legacy_revisions LIMIT 1')).rowCoun
  await pool.query("INSERT INTO return_legacy_rows(revision_id,sheet,row_number,fingerprint,anchor,occurrence,document,customer_code,customer_name,occurred_on,sku,description,signed_quantity,amount_cents,raw_status,raw_payload) VALUES($1,'DEFEITOS',2,'preview-fingerprint','preview-anchor',1,'DEF-TESTE-LOCAL','CL-TESTE','Cliente de demonstração','2026-11-17','CX156-1','Tela de teste',-1,-5000,'EM ANALISE','{}')",[revision.id]);
 }
 await pool.query("INSERT INTO whatsapp_instances(id,display_label,phone_number,status,is_default,provider,instance_name,evolution_base_url,evolution_api_key) VALUES('30000000-0000-4000-8000-000000000001','TESTE LOCAL — NÃO ENVIAR','5500000000000','ACTIVE',false,'EVOLUTION','TEST-LOCAL','https://provider.invalid','invalid') ON CONFLICT DO NOTHING");
+await pool.query(returnFinanceProjectionMigration);
 const port=Number(process.env.RETURN_PREVIEW_PORT??15439);
 if(!Number.isInteger(port)||port<1024||port>65535)throw Error('Invalid local preview port');
 const server=createApp().listen(port,"127.0.0.1",()=>console.log(`Returns preview API: http://127.0.0.1:${port} (isolated test database)`));

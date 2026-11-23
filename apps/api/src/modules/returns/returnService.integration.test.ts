@@ -1,3 +1,4 @@
+import {returnFinanceProjectionMigration} from '../../db/returnFinanceProjectionMigration.js';
 import express from "express";
 import fs from 'node:fs';
 import request from "supertest";
@@ -97,6 +98,7 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
     await pool.query(returnNoticeAccessMigration);
     await pool.query(returnOperationsMigration);
     await pool.query(returnFinanceMigration);
+    await pool.query(returnFinanceProjectionMigration);
   });
   beforeEach(async () => {
     await redis.del('crm:customer_credit:overview:v4');
@@ -565,6 +567,17 @@ describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return w
    await pool.query("UPDATE customer_credit_payment_entries SET amount=99");contribution=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(contribution.issues).toHaveLength(2);
    await pool.query('DELETE FROM customer_credit_payment_entries');for(let n=0;n<2;n++)expect((await run(n,'wallet_release',{})).status).toBe(200);
    contribution=(await getReturnFinancialContributions(pool,[customerId])).get(customerId)!;expect(contribution.adjustmentCents).toBe(10000);expect(contribution.availableCents).toBe(10000);expect((await pool.query("SELECT count(*)::int AS n FROM return_wallet_entries WHERE kind='grant'")).rows[0].n).toBe(2);expect((await getCustomerCreditDetail(customerId)).row?.balanceAmount).toBe(100);
+  });
+  it('pushes financial snapshot/customer filters to stored rows and preserves their original types and data',async()=>{
+   const snapshot=crypto.randomUUID();await pool.query('INSERT INTO customer_credit_snapshots(id,is_active) VALUES($1,true)',[snapshot]);
+   await pool.query("INSERT INTO customer_credit_snapshot_rows(snapshot_id,customer_id,customer_code,balance_amount,credit_limit,raw_payload) VALUES($1,$2,'CL-TESTE',-123.45,200,$3)",[snapshot,customerId,JSON.stringify({origin:'preserved',memo:'x'.repeat(20000)})]);
+   const query='SELECT balance_amount,raw_payload FROM customer_credit_effective_rows WHERE snapshot_id=$1 AND customer_id=$2';
+   const rows=(await pool.query(query,[snapshot,customerId])).rows;expect(rows).toHaveLength(1);expect(Number(rows[0].balance_amount)).toBe(-123.45);expect(rows[0].raw_payload.origin).toBe('preserved');
+   const plan=(await pool.query('EXPLAIN (FORMAT JSON) '+query,[snapshot,customerId])).rows[0]['QUERY PLAN'][0].Plan;
+   const nodes:any[]=[];const walk=(n:any)=>{nodes.push(n);for(const child of n.Plans??[])walk(child);};walk(plan);
+   expect(nodes.some(n=>n['Relation Name']==='customer_credit_snapshot_rows'&&JSON.stringify(n).includes('snapshot_id'))).toBe(true);
+   expect(nodes.some(n=>n['Function Name']==='jsonb_populate_record')).toBe(false);
+   const columns=(await pool.query("SELECT a.attname,format_type(a.atttypid,a.atttypmod) AS type FROM pg_attribute a WHERE a.attrelid='customer_credit_effective_rows'::regclass AND a.attname='balance_amount'")).rows;expect(columns[0].type).toBe('numeric(14,2)');
   });
   it('protects video disputes and keeps simultaneous technical tasks visible to each technician',async()=>{
    grants.push('returns.logistics');let d=await start(2);let r=await post(`/${d.id}/items`,{...item(d.version,1),outcome:'no_defect',reason:'Teste não reproduziu o defeito',customerReportedDefect:'Imagem falha no aparelho do cliente',customerEvidenceReference:'VIDEO-ORIGINAL-1',testFinding:'not_reproduced'});expect(r.status,r.body.message).toBe(200);d=r.body;expect(d.items[0].outcome).toBe('review');expect((await post(`/${d.id}/actions`,{version:d.version,action:'complete_triage'})).status).toBe(400);
