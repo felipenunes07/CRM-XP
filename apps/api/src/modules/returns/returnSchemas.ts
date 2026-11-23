@@ -49,6 +49,10 @@ export const actionSchema = z.object({
   action: z.enum(["start_triage", "complete_triage", "reopen_triage"]),
   reason: text(2000).default(""),
 }).strict().refine(value => value.action !== "reopen_triage" || Boolean(value.reason), "Informe o motivo da reabertura");
+export const itemSheetSchema=z.object({requestId:returnIdSchema,version:quantity,changes:z.array(z.union([
+  z.object({kind:z.enum(['add','update']),id:returnIdSchema,fields:z.record(z.unknown())}).strict(),
+  z.object({kind:z.literal('remove'),id:returnIdSchema}).strict(),
+])).min(1).max(100)}).strict().refine(v=>new Set(v.changes.map(c=>c.id)).size===v.changes.length,'A mesma linha aparece mais de uma vez');
 export const queueSchema = z.object({
   search: text(150).default(""),
   stage: z.enum(["active", "all", "received", "triage", "triage_completed", "closed", "overdue"]).default("active"),

@@ -1,14 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash,randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { ReturnCase, ReturnDetail, ReturnItem, ReturnQueue } from "@olist-crm/shared";
+import type { ReturnCase, ReturnDetail, ReturnItem, ReturnQueue,ReturnItemChange } from "@olist-crm/shared";
 import { pool } from "../../db/client.js";
 import { HttpError } from "../../lib/httpError.js";
 import type { JwtUser } from "../platform/authService.js";
 import { computeEffectivePermissions } from "../platform/permissionService.js";
-import { transaction, lockCase, record } from "./returnTransactions.js";
+import { transaction, lockCase, record,command } from "./returnTransactions.js";
 import { loadExecution,loadExecutions } from "./returnExecutionData.js";
 import { factoryProfiles,routeReturnItem } from './returnFactoryPolicies.js';
-import { actionSchema, assignmentSchema, attachmentSchema, itemSchema, queueSchema, receiptSchema } from "./returnSchemas.js";
+import {loadReturnWork} from './returnWork.js';
+import { actionSchema, assignmentSchema, attachmentSchema, itemSchema,itemSheetSchema, queueSchema, receiptSchema } from "./returnSchemas.js";
 
 const caseSelect = `SELECT r.*, c.customer_code, c.display_name, p.full_name AS assignee_name,
   COALESCE(i.quantity,0)::int AS item_quantity,
@@ -52,7 +53,8 @@ export async function getReturnDetail(id: string): Promise<ReturnDetail> {
   if (!result.rows[0]) throw new HttpError(404, "Protocolo não encontrado");
   const row = result.rows[0];
   const execution=await loadExecution(client,id,row.items,row.stage);
-  return { ...mapCase(row), items: row.items as ReturnItem[], attachments: row.attachments, events: row.events,execution,progress:execution.progress };
+  const detail={ ...mapCase(row), items: row.items as ReturnItem[], attachments: row.attachments, events: row.events,execution,progress:execution.progress };
+  return {...detail,work:(await loadReturnWork(client,[detail])).get(id)};
  });
 }
 
@@ -88,7 +90,9 @@ export async function listReturnQueue(query: unknown, actor: JwtUser): Promise<R
     count(*) FILTER (WHERE stage<>'closed' AND due_at<NOW())::int AS overdue FROM return_cases`);
   const items=(await pool.query(`SELECT case_id AS "caseId",id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes AS "testNotes" FROM return_items WHERE case_id=ANY($1::uuid[])`,[data.rows.map(row=>row.id)])).rows;
   const execution=await loadExecutions(pool,data.rows.map(row=>({id:row.id,stage:row.stage,items:items.filter(item=>item.caseId===row.id)})));
-  return { items: data.rows.map(row=>({...mapCase(row),progress:execution.get(row.id)!.progress})), total: count.rows[0].total, page: input.page, summary: summary.rows[0] };
+  const cases=data.rows.map(row=>({...mapCase(row),items:items.filter(i=>i.caseId===row.id) as ReturnItem[],execution:execution.get(row.id)!}));
+  const work=await loadReturnWork(pool,cases);
+  return { items: cases.map(({items:_,execution:ex,...c})=>({...c,progress:ex.progress,work:work.get(c.id)})), total: count.rows[0].total, page: input.page, summary: summary.rows[0] };
 }
 
 async function returnOperators(client: Pool | PoolClient,required:'any'|'returns.manage'='any') {
@@ -153,33 +157,55 @@ export async function assignReturnCase(id: string, payload: unknown, actor: JwtU
   return getReturnDetail(id);
 }
 
-export async function saveReturnItem(id: string, itemId: string | null, payload: unknown, actor: JwtUser) {
-  const parsed = itemSchema.parse(payload);
-  await transaction(async client => {
-    const parent = await lockCase(client, id, parsed.version);
-    const input=await routeReturnItem(client,parsed,actor);
-    if (parent.stage !== "triage") throw new HttpError(409, "Inicie ou reabra a triagem para alterar os itens");
-    const before = itemId ? (await client.query("SELECT * FROM return_items WHERE case_id=$1 AND id=$2", [id,itemId])).rows[0] : null;
-    if (itemId && !before) throw new HttpError(404, "Item não encontrado neste protocolo");
-    const total = (await client.query("SELECT COALESCE(sum(quantity),0)::int AS total FROM return_items WHERE case_id=$1 AND ($2::uuid IS NULL OR id<>$2)", [id,itemId])).rows[0].total;
-    if (total + input.quantity > parent.received_quantity) throw new HttpError(400, "A soma dos itens excede a quantidade recebida");
-    const values = [id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes,input.factoryCode,input.factoryWorkflow,input.seal,input.routingOverride,input.reasonCode??'',input.customerReportedDefect??'',input.customerEvidenceReference??'',input.testFinding??'not_tested'];
-    const result = itemId
-      ? await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10,factory_code=$11,factory_workflow=$12,seal=$13,routing_override=$14,reason_code=$15,customer_reported_defect=$16,customer_evidence_reference=$17,test_finding=$18 WHERE case_id=$1 AND id=$19 RETURNING id`, [...values,itemId])
-      : await client.query(`INSERT INTO return_items (case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes,factory_code,factory_workflow,seal,routing_override,reason_code,customer_reported_defect,customer_evidence_reference,test_finding) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`, values);
-    await record(client,id,itemId ? "item_updated" : "item_added",{ itemId: result.rows[0].id, before, after: input,requestedOutcome:parsed.outcome,routingApplied:parsed.outcome!==input.outcome },actor);
+async function applyItemChanges(client:PoolClient,id:string,parent:{stage:string;received_quantity:number},changes:ReturnItemChange[],version:number,actor:JwtUser) {
+  if(parent.stage!=="triage")throw new HttpError(409,"Inicie ou reabra a triagem para alterar os itens");
+  const current=(await client.query("SELECT * FROM return_items WHERE case_id=$1",[id])).rows;
+  let total=current.reduce((n,r)=>n+r.quantity,0);
+  for(const c of changes){
+    const old=current.find(r=>r.id===c.id);
+    if(c.kind!=='add'&&!old)throw new HttpError(404,"Linha não encontrada neste protocolo");
+    if(c.kind==='add'&&old)throw new HttpError(409,"Esta linha já foi gravada. Atualize a folha para conferir.");
+    total+=(c.kind==='remove'?0:c.fields.quantity)-(old?.quantity??0);
+  }
+  if(total>parent.received_quantity)throw new HttpError(400,"A soma das linhas excede a quantidade recebida");
+  for(const [index,c] of changes.entries()){
+    const before=current.find(r=>r.id===c.id)??null;
+    if(c.kind==='remove'){
+      await client.query("DELETE FROM return_items WHERE case_id=$1 AND id=$2",[id,c.id]);
+      await record(client,id,"item_removed",{itemId:c.id,before},actor);continue;
+    }
+    const parsed={...c.fields,version};
+    let input:Awaited<ReturnType<typeof routeReturnItem>>;
+    try{input=await routeReturnItem(client,parsed,actor);}catch(error){
+      if(error instanceof HttpError)throw new HttpError(error.statusCode,`Linha ${index+1}: ${error.message}`);
+      throw error;
+    }
+    const values=[id,input.model,input.sku,input.quantity,input.frame,input.color,input.manufacturer,input.outcome,input.reason,input.testNotes,input.factoryCode,input.factoryWorkflow,input.seal,input.routingOverride,input.reasonCode??'',input.customerReportedDefect??'',input.customerEvidenceReference??'',input.testFinding??'not_tested',c.id];
+    if(c.kind==='update')await client.query(`UPDATE return_items SET model=$2,sku=$3,quantity=$4,frame=$5,color=$6,manufacturer=$7,outcome=$8,reason=$9,test_notes=$10,factory_code=$11,factory_workflow=$12,seal=$13,routing_override=$14,reason_code=$15,customer_reported_defect=$16,customer_evidence_reference=$17,test_finding=$18 WHERE case_id=$1 AND id=$19`,values);
+    else await client.query(`INSERT INTO return_items(case_id,model,sku,quantity,frame,color,manufacturer,outcome,reason,test_notes,factory_code,factory_workflow,seal,routing_override,reason_code,customer_reported_defect,customer_evidence_reference,test_finding,id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,values);
+    await record(client,id,c.kind==='add'?"item_added":"item_updated",{itemId:c.id,before,after:input,requestedOutcome:parsed.outcome,routingApplied:parsed.outcome!==input.outcome},actor);
+  }
+}
+export async function saveReturnItem(id:string,itemId:string|null,payload:unknown,actor:JwtUser){
+  const {version,...fields}=itemSchema.parse(payload);
+  await transaction(async client=>{const parent=await lockCase(client,id,version);await applyItemChanges(client,id,parent,[{kind:itemId?'update':'add',id:itemId??randomUUID(),fields}],version,actor);});
+  return getReturnDetail(id);
+}
+export async function saveReturnItemSheet(id:string,payload:unknown,actor:JwtUser){
+  const input=itemSheetSchema.parse(payload);
+  const changes:ReturnItemChange[]=input.changes.map((c,index)=>{
+    if(c.kind==='remove')return c;
+    const validated=itemSchema.safeParse({...c.fields,version:input.version});
+    if(!validated.success)throw new HttpError(400,`Linha ${index+1}: ${validated.error.issues.map(i=>i.message).join('; ')}`);
+    const {version:_,...fields}=validated.data;return {...c,fields};
+  });
+  await command('items_sheet',{caseId:id,...input},actor,async client=>{
+    const parent=await lockCase(client,id,input.version);await applyItemChanges(client,id,parent,changes,input.version,actor);return id;
   });
   return getReturnDetail(id);
 }
-
-export async function removeReturnItem(id: string, itemId: string, version: number, actor: JwtUser) {
-  await transaction(async client => {
-    const parent = await lockCase(client,id,version);
-    if (parent.stage !== "triage") throw new HttpError(409,"Inicie ou reabra a triagem para alterar os itens");
-    const result = await client.query("DELETE FROM return_items WHERE case_id=$1 AND id=$2 RETURNING *",[id,itemId]);
-    if (!result.rowCount) throw new HttpError(404,"Item não encontrado neste protocolo");
-    await record(client,id,"item_removed",{ before: result.rows[0] },actor);
-  });
+export async function removeReturnItem(id:string,itemId:string,version:number,actor:JwtUser){
+  await transaction(async client=>{const parent=await lockCase(client,id,version);await applyItemChanges(client,id,parent,[{kind:'remove',id:itemId}],version,actor);});
   return getReturnDetail(id);
 }
 

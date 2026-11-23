@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requirePermission } from "../platform/authMiddleware.js";
 import { returnIdSchema } from "./returnSchemas.js";
 import { assignReturnCase, attachReturnFile, changeReturnStage, createReturnReceipt, getReturnDetail,
-  getReturnFile, getReturnLookups, listReturnQueue, removeReturnItem, saveReturnItem } from "./returnService.js";
+  getReturnFile, getReturnLookups, listReturnQueue, removeReturnItem, saveReturnItem,saveReturnItemSheet } from "./returnService.js";
 import { cancelFactoryBatch,dispatchFactoryBatch,executeReturnOperation,factoryAvailable,getFactoryBatch,listFactoryBatches } from './returnExecutionService.js';
 import { executionOperation } from './returnExecutionSchemas.js';
 import {replaceFactoryBatchLines,sendFactoryBatch} from './returnExecutionService.js';
@@ -67,6 +67,7 @@ returnRoutes.get("/:id/attachments/:fileId", async (req,res) => {
   res.json(await getReturnFile(returnIdSchema.parse(req.params.id),returnIdSchema.parse(req.params.fileId)));
 });
 returnRoutes.use(requirePermission("returns.manage"));
+returnRoutes.post('/:id/items-sheet',async(req,res)=>res.json(await saveReturnItemSheet(returnIdSchema.parse(req.params.id),req.body,req.user!)));
 returnRoutes.post("/", async (req,res) => { res.status(201).json(await createReturnReceipt(req.body,req.user!)); });
 returnRoutes.patch("/:id", async (req,res) => { res.json(await assignReturnCase(returnIdSchema.parse(req.params.id),req.body,req.user!)); });
 returnRoutes.post("/:id/actions", async (req,res) => { res.json(await changeReturnStage(returnIdSchema.parse(req.params.id),req.body,req.user!)); });

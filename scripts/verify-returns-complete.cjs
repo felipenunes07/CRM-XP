@@ -23,13 +23,13 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
    await page.getByRole('combobox',{name:'Responsável pela próxima ação',exact:true}).selectOption('10000000-0000-4000-8000-000000000001');
    await page.getByLabel('Prazo interno').fill('2026-12-10T15:00');await page.getByText('Mais detalhes e correção da contagem',{exact:true}).click();await page.getByLabel('Próxima ação',{exact:true}).fill('Conferir remessa de teste');
    await page.getByRole('button',{name:'Salvar responsável e prazo',exact:true}).click();
-   await page.getByRole('button',{name:'Etapa 2: Testar',exact:true}).click();await page.getByRole('button',{name:'Iniciar triagem',exact:true}).click();
-   await page.getByRole('button',{name:'Adicionar item',exact:true}).click();
-   await page.getByLabel('Modelo',{exact:true}).fill('IP11 — TESTE E2E');await page.getByText('Código, aro e cor da peça',{exact:true}).click();await page.getByLabel('SKU, se identificado',{exact:true}).fill('CX156-1');await page.getByLabel('Quantidade do grupo').fill(String(quantity));
-   await page.getByRole('combobox',{name:'Resultado',exact:true}).selectOption('external_analysis');await page.getByLabel('Fábrica',{exact:true}).fill('VV');
-   await page.getByLabel('Teste ou inspeção realizada').fill('Teste de imagem e inspeção realizados');
-   await page.getByRole('button',{name:'Salvar item',exact:true}).click();await page.getByRole('button',{name:'Salvar item',exact:true}).waitFor({state:'hidden'});
-   await page.getByRole('button',{name:'Concluir triagem',exact:true}).click();await page.locator('.returns-case-id').waitFor();
+   await page.getByRole('button',{name:'Abrir: Peças e testes',exact:true}).click();await page.getByRole('button',{name:'Iniciar triagem',exact:true}).click();
+   await page.getByRole('button',{name:'Adicionar linha',exact:true}).click();
+   await page.getByLabel('Modelo da linha 1',{exact:true}).fill('IP11 — TESTE E2E');await await page.getByLabel('SKU da linha 1',{exact:true}).fill('CX156-1');await page.getByLabel('Quantidade da linha 1').fill(String(quantity));
+   await page.getByRole('combobox',{name:'Resultado da linha 1',exact:true}).selectOption('external_analysis');await page.getByLabel('Fábrica da linha 1',{exact:true}).fill('VV');
+   await page.getByLabel('Teste realizado da linha 1').fill('Teste de imagem e inspeção realizados');
+   await page.getByRole('button',{name:/^Salvar alterações/}).click();await page.getByRole('status').filter({hasText:/Todas as alterações foram salvas|Linhas salvas/}).waitFor();
+   await page.getByRole('button',{name:'Concluir triagem e devolver à coordenação',exact:true}).click();await page.locator('.returns-case-id').waitFor();
    return detail(id);
   }
   const a=await receipt('20000000-0000-4000-8000-000000000001',3),b=await receipt('20000000-0000-4000-8000-000000000002',1);
@@ -51,9 +51,9 @@ for(const url of [front,backend])assert(['127.0.0.1','localhost'].includes(new U
   const operationButtons={factory_result:'Registrar parecer',physical_receipt:'Registrar retorno físico / estoque',resolution:'Definir atendimento',credit_authorize:'Registrar crédito autorizado',credit_post:'Confirmar lançamento no financeiro',delivery:'Registrar retirada ou despacho',delivery_confirm:'Confirmar recebimento do cliente',notice:'Registrar contato realizado',disposition:'Encaminhar destino interno',disposition_confirm:'Confirmar conclusão do destino',close:'Encerrar protocolo'};
   const operationTabs={factory_result:'Fábrica',physical_receipt:'Fábrica',resolution:'Acerto e créditos',credit_authorize:'Acerto e créditos',credit_post:'Acerto e créditos',delivery:'Contato e entrega',delivery_confirm:'Contato e entrega',notice:'Contato e entrega',disposition:'Destino e encerramento',disposition_confirm:'Destino e encerramento',close:'Destino e encerramento'};
   async function operation(op,fill){
-   if(['notice','delivery','delivery_confirm'].includes(op))await page.getByRole('button',{name:'Etapa 4: Entregar',exact:true}).click();
-   else if(op==='close')await page.getByRole('button',{name:'Etapa 5: Concluir',exact:true}).click();
-   else{await page.getByRole('button',{name:'Etapa 3: Resolver',exact:true}).click();await page.getByRole('tab',{name:['disposition','disposition_confirm'].includes(op)?'Peças e reparos':['factory_result','physical_receipt'].includes(op)?'Fábrica':'Solução para o cliente',exact:true}).click();}
+   if(['notice','delivery','delivery_confirm'].includes(op))await page.getByRole('button',{name:'Abrir: Entrega',exact:true}).click();
+   else if(op==='close')await page.getByRole('button',{name:'Abrir: Conferência final',exact:true}).click();
+   else{await page.getByRole('button',{name:'Abrir: Trabalhos e resolução',exact:true}).click();await page.getByRole('tab',{name:['disposition','disposition_confirm'].includes(op)?'Peças e reparos':['factory_result','physical_receipt'].includes(op)?'Fábrica':'Solução para o cliente',exact:true}).click();}
    if(['credit_authorize','credit_post'].includes(op)){const advanced=page.locator('details').filter({has:page.locator('summary').filter({hasText:'Crédito da fábrica e ajustes financeiros'})}).first();if(await advanced.getAttribute('open')===null)await advanced.locator('summary').click();}
 await page.getByRole('button',{name:operationButtons[op],exact:true}).click();
    const form=page.getByRole('form',{name:operationTitles[op],exact:true});await fill(form);
@@ -96,7 +96,7 @@ await page.getByRole('button',{name:operationButtons[op],exact:true}).click();
   async function delivery(id,resolutionId,method,receiptId=null){return operation('delivery',async form=>{await form.getByLabel('Atendimento que será entregue').selectOption(resolutionId);if(receiptId)await form.getByLabel('Entrada física das substitutas').selectOption(receiptId);await form.getByLabel('Forma de entrega').selectOption(method);await form.getByLabel('Retirante / destinatário identificado').fill('Cliente de teste identificado');await form.getByLabel('Transportadora e rastreio').fill('RASTREIO-E2E');await form.getByLabel('Documento / comprovante do movimento').fill(reference+'-ENTREGA-'+method);if(method==='pickup')await form.getByLabel('Comprovante de retirada').fill('RETIRADA ASSINADA — TESTE');});}
   await delivery(a.id,d.execution.resolutions.find(r=>r.kind==='return_original').id,'pickup');
   d=await delivery(a.id,d.execution.resolutions.find(r=>r.kind==='replacement').id,'dispatch',d.execution.receipts.find(r=>r.kind==='supplier_replacement').id);
-  await page.getByRole('button',{name:'Etapa 5: Concluir',exact:true}).click();assert(await page.getByRole('button',{name:'Encerrar protocolo',exact:true}).isDisabled());
+  await page.getByRole('button',{name:'Abrir: Conferência final',exact:true}).click();assert(await page.getByRole('button',{name:'Encerrar protocolo',exact:true}).isDisabled());
   await operation('notice',async form=>{await form.getByLabel('Canal do contato realizado').selectOption('phone');await form.getByLabel('Com quem falou').fill('Cliente de teste');await form.getByLabel('Resumo informado ao cliente').fill('Resultados e entrega parcial informados');await form.getByLabel('Documento / comprovante do movimento').fill('CONTATO DE TESTE');});
   d=await operation('delivery_confirm',async form=>{await form.getByLabel('Despacho aguardando recebimento').selectOption(d.execution.deliveries.find(e=>!e.deliveredAt).id);await form.getByLabel('Quem recebeu').fill('Cliente de teste');await form.getByLabel('Comprovante do recebimento').fill('CANHOTO CONFIRMADO — TESTE');});
   assert.equal(d.execution.progress.canClose,true);d=await operation('close',form=>form.getByLabel('Motivo / conferência').fill('Todos os saldos e comprovantes conferidos no teste'));assert.equal(d.stage,'closed');
@@ -118,7 +118,7 @@ await page.getByRole('button',{name:operationButtons[op],exact:true}).click();
   assert.equal(d.progress.canClose,false);assert(d.progress.blockers.some(b=>b.includes('entrada das peças recuperadas')));
   await nativeCommand('stock_receive',{dispositionId:d.execution.dispositions[0].id,sku:'CX156-1',grade:'grade_1',seal:'1',inspection:'Inspeção e testes do outlet conferidos',location:'OUTLET-TESTE',reference:reference+'-ESTOQUE-B'});await openCase(b.id);
   d=await operation('close',form=>form.getByLabel('Motivo / conferência').fill('Atendimento e destinação interna conferidos'));assert.equal(d.stage,'closed');
-  await page.reload();await page.getByRole('button',{name:'Etapa 5: Concluir',exact:true}).click();await page.getByText(/Protocolo encerrado em/).waitFor();assert.deepEqual(errors,[]);
+  await page.reload();await page.getByRole('button',{name:'Abrir: Conferência final',exact:true}).click();await page.getByText(/Protocolo encerrado em/).waitFor();assert.deepEqual(errors,[]);
   const report={checkedAt:new Date().toISOString(),caseIds:state.caseIds,mixedClientBatch:true,partialFactoryPendingVisible:true,customerAndSupplierCreditsIndependent:true,partialDeliveryBlockedClose:true,originalAndReplacementCustody:true,internalWorkBlockedClose:true,reprintingDidNotDuplicateCredit:true,bothCasesClosed:true,mobileNoOverflow:true,errors};
   await fs.writeFile(path.join(output,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
  }catch(e){await page.screenshot({path:path.join(output,'failure.png'),fullPage:true}).catch(()=>{});throw e;}

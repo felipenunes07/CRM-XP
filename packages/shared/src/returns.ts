@@ -80,6 +80,7 @@ export interface ReturnCase {
   updatedAt: string;
   closedAt: string | null;
   progress?: ReturnProgress;
+  work?:import('./returnWork.js').ReturnWork;
 }
 export interface ReturnAttachment { id: string; name: string; contentType: string; size: number; createdAt: string; authorName: string }
 export interface ReturnEvent { id: string; action: string; authorName: string; createdAt: string; data: Record<string, unknown> }
@@ -96,7 +97,7 @@ export const RETURN_RECEIPT_LABELS = { original_returned:"Original recebida da f
 export const RETURN_DESTINATION_LABELS = { technical_review:"Separação e reteste interno", reconditioning:"Recondicionamento", outlet:"Outlet", stock:"Estoque após conferência", china:"Envio à China", disposal:"Descarte autorizado" } as const;
 export interface ReturnCommand { requestId: string; version: number; evidenceId?:string|null }
 export interface ReturnFact { id: string; caseId: string; itemId: string; quantity: number; createdAt: string; authorName: string; voidedAt: string | null }
-export interface ReturnFactoryLine { id: string; batchId: string; caseId: string; itemId: string; quantity: number; batchCode: string; manufacturer: string; dueAt: string; sentAt: string|null; reference: string; voidedAt: string | null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string }
+export interface ReturnFactoryLine { id: string; batchId: string; caseId: string; itemId: string; quantity: number; batchCode: string; manufacturer: string; dueAt: string; sentAt: string|null; reference: string; voidedAt: string | null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string;responsibleId?:string|null;responsibleName?:string|null }
 export interface ReturnFactoryResult extends ReturnFact { lineId: string; decision: "approved"|"refused"; compensation: "replacement"|"credit"|"none"; reason: string; originalReport: string; translation: string; reference: string; occurredAt: string; approvalReference: string }
 export interface ReturnPhysicalReceipt extends ReturnFact { lineId: string|null; resultId: string|null; kind: keyof typeof RETURN_RECEIPT_LABELS; location: string; receivedBy: string; reference: string; reason: string; occurredAt: string; approvalReference: string }
 export interface ReturnResolution extends ReturnFact { resultId: string|null; kind: keyof typeof RETURN_REMEDY_LABELS; reason: string; approvalReference: string }
@@ -106,7 +107,7 @@ export interface ReturnDisposition extends ReturnFact { asset: "original"|"repla
 export interface ReturnNotice { id: string; channel: "whatsapp"|"phone"|"email"|"in_person"; recipient: string; summary: string; reference: string; occurredAt: string; authorName: string }
 export interface ReturnReview { id: string; reason: string; authorName: string; createdAt: string; resolvedAt: string|null; resolution: string }
 export interface ReturnSourcePool { key: string; itemId: string; resultId: string|null; model: string; outcome: string; quantity: number; remainingQuantity: number }
-export interface ReturnProgress { factoryPendingQuantity: number; supplierPendingQuantity: number; customerPendingQuantity: number; financePendingCount: number; deliveryPendingQuantity: number; internalPendingQuantity: number; reviewCount: number; customerComplete: boolean; internalComplete: boolean; canClose: boolean; blockers: string[] }
+export interface ReturnProgress { factoryPendingQuantity: number; supplierPendingQuantity: number; customerPendingQuantity: number; financePendingCount: number; deliveryPendingQuantity: number; internalPendingQuantity: number; reviewCount: number; customerComplete: boolean; internalComplete: boolean; canClose: boolean; blockers: string[];stockPending?:boolean;legacyConflict?:boolean }
 export interface ReturnExecution { factoryLines: ReturnFactoryLine[]; results: ReturnFactoryResult[]; receipts: ReturnPhysicalReceipt[]; resolutions: ReturnResolution[]; credits: ReturnCredit[]; deliveries: ReturnDelivery[]; dispositions: ReturnDisposition[]; notices: ReturnNotice[]; reviews: ReturnReview[]; pools: ReturnSourcePool[]; progress: ReturnProgress }
 export interface ReturnFactoryAvailable { itemId: string; caseId: string; version: number; protocol: string; customerCode: string; customerName: string; model: string; manufacturer: string; availableQuantity: number }
 export interface ReturnFactoryBatch { id: string; code: string; manufacturer: string; sentAt: string|null; dueAt: string; reference: string; carrier: string; fromLocation: string; authorName: string; voidedAt: string|null;state:'assembling'|'sent';mode:'batch'|'individual';lotReference:string;responsibleId:string|null;version:number; lines: Array<ReturnFactoryAvailable & { id: string; quantity: number; decidedQuantity: number }> }

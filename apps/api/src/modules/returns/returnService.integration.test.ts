@@ -76,6 +76,41 @@ const resultInput=(d:any,quantity:number,decision='approved',compensation='repla
 const noticeInput={channel:'phone',recipient:'Cliente identificado',summary:'Resumo do resultado informado ao cliente',reference:'Atendimento confirmado',occurredAt};
 
 describe.runIf(Boolean(process.env.RETURN_WORKFLOW_TEST_DATABASE_URL))("return workflow with real PostgreSQL",() => {
+  it('saves a worksheet atomically and replays a lost response without duplicate rows',async()=>{
+    const d=await start(5),fields=({...item(d.version,2)});delete (fields as Partial<typeof fields>).version;
+    const changes=[{kind:'add',id:crypto.randomUUID(),fields},{kind:'add',id:crypto.randomUUID(),fields:{...fields,quantity:3,model:'Outro modelo'}}];
+    const input={requestId:crypto.randomUUID(),version:d.version,changes};
+    const saved=await post(`/${d.id}/items-sheet`,input);expect(saved.status,saved.body.message).toBe(200);expect(saved.body.items).toHaveLength(2);
+    expect(saved.body.items.map((i:any)=>i.id).sort()).toEqual(changes.map(c=>c.id).sort());
+    const replay=await post(`/${d.id}/items-sheet`,input);expect(replay.status,replay.body.message).toBe(200);expect(replay.body.version).toBe(saved.body.version);expect(replay.body.items).toHaveLength(2);
+    const other=await start(5);expect((await post(`/${other.id}/items-sheet`,input)).status).toBe(409);
+    expect((await post(`/${d.id}/items-sheet`,{...input,changes:[...changes,changes[0]]})).status).toBe(400);
+  });
+  it('rolls back all worksheet rows and audit events when a later factory is invalid',async()=>{
+    const d=await start(2),{version:_,...fields}=item(d.version,1);
+    await pool.query("UPDATE return_factory_profiles SET is_active=false WHERE code='VV'");
+    const response=await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'add',id:crypto.randomUUID(),fields},{kind:'add',id:crypto.randomUUID(),fields:{...fields,manufacturer:'VV'}}]});
+    await pool.query("UPDATE return_factory_profiles SET is_active=true WHERE code='VV'");
+    expect(response.status).toBe(400);expect(response.body.message).toContain('Linha 2');const after=(await get('/'+d.id)).body;expect(after.version).toBe(d.version);expect(after.items).toHaveLength(0);expect(after.events).toHaveLength(d.events.length);
+  });
+  it('checks final worksheet quantity and supports redistribution and removal without intermediate overflow',async()=>{
+    let d=await start(5);const {version:_,...fields}=item(d.version,2);const a=crypto.randomUUID(),b=crypto.randomUUID();
+    d=(await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'add',id:a,fields},{kind:'add',id:b,fields:{...fields,quantity:3}}]})).body;
+    let response=await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'update',id:a,fields:{...fields,quantity:4}},{kind:'update',id:b,fields:{...fields,quantity:1}}]});expect(response.status,response.body.message).toBe(200);d=response.body;expect(d.itemQuantity).toBe(5);
+    response=await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'update',id:a,fields:{...fields,quantity:5}},{kind:'remove',id:b}]});expect(response.status,response.body.message).toBe(200);expect(response.body.items).toHaveLength(1);expect(response.body.items[0].quantity).toBe(5);
+  });
+  it('rejects stale, foreign and unauthorized worksheet writes and hands triage back to its real coordinator',async()=>{
+    await pool.query('UPDATE return_transition_settings SET coordinator_id=$1 WHERE id=1',[operatorId]);
+    let d=await start(1),other=await start(1);const {version:_,...fields}=item(d.version,1),line=crypto.randomUUID();
+    const saved=await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'add',id:line,fields}]});expect(saved.status,saved.body.message).toBe(200);
+    expect((await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'remove',id:line}]})).status).toBe(409);
+    expect((await post(`/${other.id}/items-sheet`,{requestId:crypto.randomUUID(),version:other.version,changes:[{kind:'update',id:line,fields}]})).status).toBe(404);
+    expect((await post(`/${other.id}/items-sheet`,{requestId:crypto.randomUUID(),version:other.version,changes:[{kind:'add',id:line,fields}]})).status).toBe(409);
+    d=(await post(`/${d.id}/actions`,{version:saved.body.version,action:'complete_triage'})).body;expect(d.work.coordinator.name).toBe('Isis');expect(d.work.tasks.find((t:any)=>t.id==='solution').owner.id).toBe(operatorId);
+    const queue=(await get('')).body;expect(queue.items.find((r:any)=>r.id===d.id).work).toEqual(d.work);
+    expect((await post(`/${d.id}/items-sheet`,{requestId:crypto.randomUUID(),version:d.version,changes:[{kind:'remove',id:line}]})).status).toBe(409);
+    grants=['returns.view'];expect((await post(`/${other.id}/items-sheet`,{requestId:crypto.randomUUID(),version:other.version,changes:[{kind:'add',id:crypto.randomUUID(),fields}]})).status).toBe(403);
+  });
   beforeAll(async () => {
     await pool.query("CREATE SCHEMA IF NOT EXISTS returns_workflow_test");
     await pool.query(`CREATE TABLE profiles(id uuid PRIMARY KEY,email text,full_name text,role text,is_active boolean);
